@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Local HTML Reader</title>
+  <style>
+    :root { --bd:#e6e6e6; --fg:#111; --mut:#666; --bg:#fff; --hl:#f5f7ff; }
+    *{box-sizing:border-box}
+    body{margin:0;height:100vh;display:flex;font-family:system-ui,-apple-system,"Segoe UI",Arial;color:var(--fg);background:var(--bg)}
+    #left{width:360px;border-right:1px solid var(--bd);display:flex;flex-direction:column;min-width:260px;max-width:520px}
+    #top{padding:10px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:8px}
+    #row1{display:flex;gap:8px;align-items:center}
+    button{padding:7px 10px;border:1px solid var(--bd);background:#fff;border-radius:10px;cursor:pointer}
+    button:hover{background:#fafafa}
+    #q{width:100%;padding:8px 10px;border:1px solid var(--bd);border-radius:12px}
+    #hint{font-size:12px;color:var(--mut);line-height:1.35}
+    #list{flex:1;overflow:auto;padding:8px 6px}
+    .item{padding:6px 8px;border-radius:10px;cursor:pointer;display:flex;gap:8px;align-items:flex-start}
+    .item:hover{background:#fafafa}
+    .item.active{background:var(--hl);outline:1px solid #dfe6ff}
+    .name{word-break:break-all;font-size:13px}
+    .path{word-break:break-all;font-size:11px;color:var(--mut)}
+    .badge{font-size:11px;color:var(--mut);border:1px solid var(--bd);padding:1px 7px;border-radius:999px;white-space:nowrap}
+    #right{flex:1;display:flex;flex-direction:column;min-width:0}
+    #bar{padding:8px 10px;border-bottom:1px solid var(--bd);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    #title{font-size:13px;color:var(--mut);flex:1;min-width:220px;word-break:break-all}
+    #view{flex:1;border:0;width:100%}
+    kbd{font:inherit;font-size:12px;border:1px solid var(--bd);border-bottom-width:2px;padding:1px 6px;border-radius:6px;background:#fff}
+    .sep{width:1px;height:18px;background:var(--bd);margin:0 2px}
+  </style>
+</head>
+<body>
+  <div id="left">
+    <div id="top">
+      <div id="row1">
+        <button id="pick">选择文件夹</button>
+        <button id="prev" title="上一篇 (Alt+↑)">上一</button>
+        <button id="next" title="下一篇 (Alt+↓)">下一</button>
+        <span class="sep"></span>
+        <button id="openTab" title="在新标签打开当前页">新标签</button>
+      </div>
+      <input id="q" placeholder="搜索文件名/路径…（支持过滤）" />
+      <div id="hint">
+        快捷键：<kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> 上下篇，
+        <kbd>Ctrl</kbd>+<kbd>K</kbd> 聚焦搜索，
+        <kbd>Esc</kbd> 清空搜索。<br/>
+        会记住：上次打开的文件 + 阅读滚动位置。
+      </div>
+      <div id="meta" style="font-size:12px;color:var(--mut)"></div>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <div id="right">
+    <div id="bar">
+      <div id="title">未选择文件夹</div>
+      <span class="badge" id="count">0</span>
+    </div>
+    <iframe id="view"></iframe>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    dir: null,
+    files: [],          // { key, name, rel, handle, lastModified, size }
+    filtered: [],
+    currentIndex: -1,
+    currentKey: null,
+    currentBlobUrl: null,
+    restoringScroll: false,
+  };
+
+  const STORAGE_KEY = "local_html_reader:last";
+  // last = { dirName, key, scrollY }
+
+  function setMeta(text){ $("meta").textContent = text; }
+  function setTitle(text){ $("title").textContent = text || ""; }
+  function setCount(n){ $("count").textContent = n; }
+
+  function normalizeRel(rel){ return rel.replaceAll("\\","/"); }
+
+  async function walkDir(dirHandle, prefix="") {
+    const out = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      if (handle.kind === "directory") {
+        const sub = await walkDir(handle, prefix + name + "/");
+        out.push(...sub);
+      } else if (handle.kind === "file" && name.toLowerCase().endsWith(".html")) {
+        const rel = prefix + name;
+        out.push({ rel: normalizeRel(rel), handle });
+      }
+    }
+    return out;
+  }
+
+  function buildList() {
+    const list = $("list");
+    list.innerHTML = "";
+
+    const q = $("q").value.trim().toLowerCase();
+    const arr = q
+      ? state.files.filter(f => (f.name + " " + f.rel).toLowerCase().includes(q))
+      : state.files.slice();
+
+    state.filtered = arr;
+    setCount(arr.length);
+
+    for (let i=0;i<arr.length;i++){
+      const f = arr[i];
+      const div = document.createElement("div");
+      div.className = "item";
+      div.dataset.key = f.key;
+
+      div.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div class="name">${escapeHtml(f.name)}</div>
+          <div class="path">${escapeHtml(f.rel)}</div>
+        </div>
+        <div class="badge" title="最后修改">${new Date(f.lastModified).toLocaleDateString()}</div>
+      `;
+
+      div.onclick = () => openByKey(f.key, true);
+      list.appendChild(div);
+    }
+
+    highlightActive();
+  }
+
+  function highlightActive(){
+    document.querySelectorAll(".item").forEach(el=>{
+      el.classList.toggle("active", el.dataset.key === state.currentKey);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#39;");
+  }
+
+  function currentFilteredIndex() {
+    if (!state.currentKey) return -1;
+    return state.filtered.findIndex(x => x.key === state.currentKey);
+  }
+
+  function storeScroll() {
+    try {
+      if (!state.currentKey) return;
+      const y = $("view").contentWindow?.scrollY ?? 0;
+      const last = loadLast() || {};
+      saveLast({ ...last, key: state.currentKey, scrollY: y, dirName: state.dir?.name || "" });
+    } catch {}
+  }
+
+  function loadLast(){
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; }
+  }
+  function saveLast(obj){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch {}
+  }
+
+  async function openByKey(key, rememberScrollRestore) {
+    const f = state.files.find(x => x.key === key);
+    if (!f) return;
+
+    // 先保存当前阅读位置
+    storeScroll();
+
+    // 清理旧 blob
+    if (state.currentBlobUrl) {
+      URL.revokeObjectURL(state.currentBlobUrl);
+      state.currentBlobUrl = null;
+    }
+
+    state.currentKey = key;
+    setTitle(f.rel);
+    highlightActive();
+
+    // 生成 blob URL 以尽量保留原 HTML 的相对资源加载
+    const file = await f.handle.getFile();
+    const blobUrl = URL.createObjectURL(file);
+    state.currentBlobUrl = blobUrl;
+
+    // 记录当前
+    const last = loadLast() || {};
+    saveLast({ ...last, key, dirName: state.dir?.name || "", scrollY: 0 });
+
+    // 加载到 iframe
+    const iframe = $("view");
+    state.restoringScroll = true;
+
+    iframe.onload = () => {
+      // 尝试恢复滚动位置
+      if (!rememberScrollRestore) return;
+
+      const last2 = loadLast();
+      if (last2?.key === key && typeof last2.scrollY === "number") {
+        try {
+          // 某些页面需要一点时间渲染
+          setTimeout(() => {
+            try { iframe.contentWindow.scrollTo(0, last2.scrollY); } catch {}
+            state.restoringScroll = false;
+          }, 60);
+        } catch { state.restoringScroll = false; }
+      } else {
+        state.restoringScroll = false;
+      }
+    };
+
+    iframe.src = blobUrl;
+  }
+
+  function nav(delta){
+    const idx = currentFilteredIndex();
+    if (idx < 0) return;
+    const nextIdx = Math.max(0, Math.min(state.filtered.length - 1, idx + delta));
+    const f = state.filtered[nextIdx];
+    if (f) openByKey(f.key, true);
+  }
+
+  async function pickFolder() {
+    if (!window.showDirectoryPicker) {
+      alert("你的浏览器不支持选择文件夹（请用 Chrome/Edge）。");
+      return;
+    }
+
+    // 新文件夹前保存一次滚动
+    storeScroll();
+
+    const dir = await window.showDirectoryPicker();
+    state.dir = dir;
+
+    setMeta("正在扫描 HTML…");
+    const found = await walkDir(dir);
+
+    // 拉取文件元信息（最后修改/大小）
+    const files = [];
+    for (const x of found) {
+      const file = await x.handle.getFile();
+      files.push({
+        key: x.rel, // 用相对路径当 key
+        name: x.rel.split("/").pop(),
+        rel: x.rel,
+        handle: x.handle,
+        lastModified: file.lastModified,
+        size: file.size
+      });
+    }
+
+    // 默认：按相对路径排序（更像“目录顺序”）
+    files.sort((a,b) => a.rel.localeCompare(b.rel, "zh-CN", { numeric:true, sensitivity:"base" }));
+
+    state.files = files;
+    setMeta(`已载入：${files.length} 个 HTML（含子目录）`);
+    buildList();
+
+    // 尝试恢复上次打开
+    const last = loadLast();
+    if (last?.key && state.files.some(f=>f.key===last.key)) {
+      openByKey(last.key, true);
+    } else if (state.files[0]) {
+      openByKey(state.files[0].key, false);
+    }
+  }
+
+  function openInNewTab(){
+    if (!state.currentBlobUrl) return;
+    window.open(state.currentBlobUrl, "_blank", "noopener");
+  }
+
+  // UI wire
+  $("pick").onclick = pickFolder;
+  $("prev").onclick = () => nav(-1);
+  $("next").onclick = () => nav(+1);
+  $("openTab").onclick = openInNewTab;
+
+  $("q").addEventListener("input", () => {
+    buildList();
+    // 过滤后高亮当前项
+    highlightActive();
+  });
+
+  // 快捷键
+  window.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      $("q").focus();
+      $("q").select();
+      return;
+    }
+    if (e.key === "Escape") {
+      if (document.activeElement === $("q") && $("q").value) {
+        $("q").value = "";
+        buildList();
+      }
+      return;
+    }
+    if (e.altKey && e.key === "ArrowUp") { e.preventDefault(); nav(-1); return; }
+    if (e.altKey && e.key === "ArrowDown") { e.preventDefault(); nav(+1); return; }
+  });
+
+  // 离开页面时保存滚动
+  window.addEventListener("beforeunload", () => {
+    storeScroll();
+    if (state.currentBlobUrl) URL.revokeObjectURL(state.currentBlobUrl);
+  });
+
+  setMeta("点击「选择文件夹」开始。");
+})();
+</script>
+</body>
+</html>
