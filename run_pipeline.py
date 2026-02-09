@@ -2,6 +2,7 @@ import os
 import re
 import socket
 import sqlite3
+import argparse
 
 from script import fetch_cdx_rows, write_cdx_rows
 from snapshot import build_simplified_tweet_html, fetch_snapshot_content_iframe
@@ -64,10 +65,19 @@ def save_snapshots(rows: list[tuple[str, str]], username: str, db_path: str) -> 
 
 
 def main() -> None:
-    username = "susiethegamer"
+    parser = argparse.ArgumentParser(description="Save Wayback tweet snapshots")
+    parser.add_argument(
+        "username",
+        help="Twitter username to fetch snapshots for"
+    )
+
+    args = parser.parse_args()
+    username = args.username
+
     db_path = os.path.join("output", f"{username}.db")
     if not os.path.exists(db_path):
         db_path = write_cdx_rows(username, fetch_cdx_rows(username))
+
     rows = load_pending_rows(db_path)
     save_snapshots(rows, username, db_path)
 
