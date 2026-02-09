@@ -22,7 +22,7 @@ This project fetches archived Twitter snapshots from the Wayback Machine and ren
 2. Run:
 
 ```bash
-python run_pipeline.py
+python run_pipeline.py susiethegamer
 ```
 
 On first run it creates `output/{username}.db` and seeds it with snapshot rows.
