@@ -39,13 +39,6 @@ def _open_url(url: str, timeout_seconds: int | None = None) -> str:
     return bytes(chunks).decode("utf-8", errors="replace")
 
 
-def fetch_snapshot_content(timestamp: str, original_url: str, timeout_seconds: int | None = None) -> str:
-    archive_url = f"https://web.archive.org/web/{timestamp}/{original_url}"
-    return _open_url(archive_url, timeout_seconds)
-
-# 抓取iframe里的
-
-
 def _normalize_x_url(url: str) -> str:
     parts = urlsplit(url)
     hostname = (parts.hostname or "").lower()
@@ -107,6 +100,20 @@ def _extract_payload(iframe_html: str) -> dict | None:
     normalized = _normalize_payload_urls(payload)
     return normalized if isinstance(normalized, dict) else None
 
+
+def _get_preferred_tweet_text(data: dict) -> str:
+    note_tweet = data.get("note_tweet")
+    if isinstance(note_tweet, dict):
+        note_text = note_tweet.get("text")
+        if isinstance(note_text, str) and note_text:
+            return note_text
+
+    text = data.get("text")
+    if isinstance(text, str):
+        return text
+    return ""
+
+
 def fetch_snapshot_content_iframe(timestamp: str, original_url: str, timeout_seconds: int | None = None) -> str:
     normalized = _normalize_x_url(original_url)
     base_urls = [normalized]
@@ -161,7 +168,7 @@ def build_simplified_tweet_html(iframe_html: str) -> str:
     author_listed = author_metrics.get("listed_count", "")
     author_media = author_metrics.get("media_count", "")
 
-    text = html_module.escape(data.get("text", ""))
+    text = html_module.escape(_get_preferred_tweet_text(data))
     created_at = html_module.escape(data.get("created_at", ""))
     conversation_id = html_module.escape(data.get("conversation_id", ""))
     referenced_tweets = data.get("referenced_tweets", []) or []
@@ -299,7 +306,7 @@ def extract_iframe_data(iframe_html: str) -> str:
     author_listed = author_metrics.get("listed_count", "")
     author_media = author_metrics.get("media_count", "")
 
-    text = html_module.escape(data.get("text", ""))
+    text = html_module.escape(_get_preferred_tweet_text(data))
     created_at = html_module.escape(data.get("created_at", ""))
     conversation_id = html_module.escape(data.get("conversation_id", ""))
     referenced_tweets = data.get("referenced_tweets", []) or []
@@ -347,7 +354,6 @@ def extract_iframe_data(iframe_html: str) -> str:
 
 
 __all__ = [
-    "fetch_snapshot_content",
     "fetch_snapshot_content_iframe",
     "build_simplified_tweet_html",
     "extract_iframe_data",
