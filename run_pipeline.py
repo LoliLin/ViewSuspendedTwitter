@@ -1,3 +1,4 @@
+import argparse
 import os
 import re
 import sqlite3
@@ -64,8 +65,15 @@ def save_snapshots(rows: list[tuple[str, str]], username: str, db_path: str) -> 
         # time.sleep(1.5)  # 不然一直跳
 
 
-def main() -> None:
-    username = "lumicatroll"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fetch archived Twitter snapshots and save simplified HTML files."
+    )
+    parser.add_argument("username", help="Twitter/X username to process")
+    return parser.parse_args()
+
+
+def main(username: str) -> None:
     db_path = os.path.join("output", f"{username}.db")
     if not os.path.exists(db_path):
         db_path = write_cdx_rows(username, fetch_cdx_rows(username))
@@ -74,4 +82,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.username)
