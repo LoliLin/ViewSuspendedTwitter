@@ -1,15 +1,32 @@
 import html as html_module
 import json
 import re
-import urllib.request
+from threading import Lock
+
+import httpx
 
 USER_AGENT = "ViewSuspendedTwitter/1.0 (+https://web.archive.org/)"
+_HTTP_CLIENT: httpx.Client | None = None
+_HTTP_CLIENT_LOCK = Lock()
+
+
+def _get_http_client() -> httpx.Client:
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        with _HTTP_CLIENT_LOCK:
+            if _HTTP_CLIENT is None:
+                # Keep a single pooled client so TCP/TLS connections can be reused.
+                _HTTP_CLIENT = httpx.Client(
+                    headers={"User-Agent": USER_AGENT},
+                    follow_redirects=True,
+                )
+    return _HTTP_CLIENT
 
 
 def _open_url(url: str, timeout_seconds: int | None = None) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    response = _get_http_client().get(url, timeout=timeout_seconds)
+    response.raise_for_status()
+    return response.content.decode("utf-8", errors="replace")
 
 
 def fetch_snapshot_content(timestamp: str, original_url: str, timeout_seconds: int | None = None) -> str:

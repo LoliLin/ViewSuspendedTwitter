@@ -61,7 +61,7 @@ def save_snapshots(rows: list[tuple[str, str]], username: str, db_path: str) -> 
         except Exception as exc:
             mark_row(db_path, timestamp, original, 2, str(exc))
             print([timestamp, original, str(exc)])
-        time.sleep(1.5)  # 不然一直跳
+        # time.sleep(1.5)  # 不然一直跳
 
 
 def main() -> None:
