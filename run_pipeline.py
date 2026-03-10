@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import time
+import argparse
 
 from script import fetch_cdx_rows, write_cdx_rows
 from snapshot import build_simplified_tweet_html, fetch_snapshot_content_iframe
@@ -64,7 +65,6 @@ def save_snapshots(rows: list[tuple[str, str]], username: str, db_path: str) -> 
             print([timestamp, original, str(exc)])
         # time.sleep(1.5)  # 不然一直跳
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch archived Twitter snapshots and save simplified HTML files."
@@ -77,6 +77,7 @@ def main(username: str) -> None:
     db_path = os.path.join("output", f"{username}.db")
     if not os.path.exists(db_path):
         db_path = write_cdx_rows(username, fetch_cdx_rows(username))
+
     rows = load_pending_rows(db_path)
     save_snapshots(rows, username, db_path)
 
