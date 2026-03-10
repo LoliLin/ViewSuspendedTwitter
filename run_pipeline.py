@@ -1,7 +1,8 @@
+import argparse
 import os
 import re
-import socket
 import sqlite3
+import time
 import argparse
 
 from script import fetch_cdx_rows, write_cdx_rows
@@ -18,7 +19,7 @@ def load_pending_rows(db_path: str) -> list[tuple[str, str]]:
             """
             SELECT timestamp, original
             FROM snapshots
-            WHERE status IN (0)
+            WHERE status IN (0, 2)
             ORDER BY timestamp DESC
             """
         ).fetchall()
@@ -62,18 +63,17 @@ def save_snapshots(rows: list[tuple[str, str]], username: str, db_path: str) -> 
         except Exception as exc:
             mark_row(db_path, timestamp, original, 2, str(exc))
             print([timestamp, original, str(exc)])
+        # time.sleep(1.5)  # 不然一直跳
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Save Wayback tweet snapshots")
-    parser.add_argument(
-        "username",
-        help="Twitter username to fetch snapshots for"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fetch archived Twitter snapshots and save simplified HTML files."
     )
+    parser.add_argument("username", help="Twitter/X username to process")
+    return parser.parse_args()
 
-    args = parser.parse_args()
-    username = args.username
 
+def main(username: str) -> None:
     db_path = os.path.join("output", f"{username}.db")
     if not os.path.exists(db_path):
         db_path = write_cdx_rows(username, fetch_cdx_rows(username))
@@ -83,4 +83,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args.username)

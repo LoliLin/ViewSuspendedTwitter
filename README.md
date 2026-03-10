@@ -18,11 +18,10 @@ This project fetches archived Twitter snapshots from the Wayback Machine and ren
 
 ### Usage
 
-1. Update `username` in `run_pipeline.py`.
-2. Run:
+1. Run with a username argument:
 
 ```bash
-python run_pipeline.py susiethegamer
+python run_pipeline.py lumicatroll
 ```
 
 On first run it creates `output/{username}.db` and seeds it with snapshot rows.
@@ -66,11 +65,10 @@ Wayback may throttle or temporarily reject requests. If you hit failures, re-run
 
 ### 使用方法
 
-1. 修改 `run_pipeline.py` 中的 `username`。
-2. 运行：
+1. 通过参数传入用户名：
 
 ```bash
-python run_pipeline.py
+python run_pipeline.py lumicatroll
 ```
 
 首次运行会自动创建 `output/{username}.db` 并写入快照列表。
